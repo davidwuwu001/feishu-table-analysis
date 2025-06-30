@@ -1,0 +1,51 @@
+{
+  "name": "feishu-auth-module",
+  "version": "1.0.0",
+  "description": "飞书认证模块 - 基于飞书多维表格的用户认证系统，可集成到其他应用",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/node": "^20.9.0",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "autoprefixer": "^10.4.16",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
+    "lucide-react": "^0.292.0",
+    "next": "^14.2.30",
+    "postcss": "^8.4.32",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwind-merge": "^2.0.0",
+    "tailwindcss": "^3.3.6",
+    "typescript": "^5.3.2"
+  },
+  "devDependencies": {
+    "eslint": "^8.54.0",
+    "eslint-config-next": "14.0.3"
+  },
+  "keywords": [
+    "feishu",
+    "authentication",
+    "auth-module",
+    "Next.js",
+    "user-management",
+    "登录注册"
+  ],
+  "author": "David Wu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davidwuwu001/feishu-table-analysis.git"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
