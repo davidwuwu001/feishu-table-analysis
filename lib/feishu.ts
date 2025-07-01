@@ -14,8 +14,9 @@ const FEISHU_CONFIG = {
   APP_SECRET: process.env.FEISHU_APP_SECRET || '',
   USER_TABLE_APP_TOKEN: process.env.FEISHU_USER_TABLE_APP_TOKEN || '',
   USER_TABLE_ID: process.env.FEISHU_USER_TABLE_ID || '',
-  NEWS_TABLE_ID: process.env.FEISHU_NEWS_TABLE_ID || 'tblNewsDefault',
-  TOOL_USAGE_TABLE_ID: process.env.FEISHU_TOOL_USAGE_TABLE_ID || 'tblToolUsageDefault',
+  // 新增新闻数据库配置
+  NEWS_APP_TOKEN: process.env.FEISHU_NEWS_APP_TOKEN || '',
+  NEWS_TABLE_ID: process.env.FEISHU_NEWS_TABLE_ID || '',
   API_BASE_URL: 'https://open.feishu.cn/open-apis'
 };
 
@@ -32,6 +33,18 @@ export interface FeishuUser {
   status: string;
   wechat?: string;
   email?: string;
+}
+
+// 新增新闻数据类型
+export interface NewsItem {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  heat: number;
+  crawlTime: string;
+  aiRelevance: '高' | '中' | '低' | '未分类';
+  summary: string;
 }
 
 export interface ConsumerRecord {
@@ -61,12 +74,13 @@ export interface User {
   id: string;
   phone: string;
   name: string;
+  userType: '老师' | '家长' | '管理员';
   createdTime: string;
   lastLoginTime: string;
 }
 
 /**
- * 飞书API服务类 - 简化版（仅用户认证）
+ * 飞书API服务类 - 支持用户认证和新闻管理
  */
 export class FeishuService {
   private accessToken: string | null = null;
@@ -134,25 +148,6 @@ export class FeishuService {
   }
 
   /**
-   * 获取表格字段信息
-   */
-  async getTableFields(): Promise<any[]> {
-    try {
-      console.log('获取表格字段信息...');
-      
-      const response = await this.apiRequest(
-        `/bitable/v1/apps/${FEISHU_CONFIG.USER_TABLE_APP_TOKEN}/tables/${FEISHU_CONFIG.USER_TABLE_ID}/fields`
-      );
-      
-      console.log('表格字段信息:', response.data?.items);
-      return response.data?.items || [];
-    } catch (error) {
-      console.error('获取表格字段信息失败:', error);
-      throw error;
-    }
-  }
-
-  /**
    * 检查用户是否存在
    */
   async checkUserExists(phone: string): Promise<User | null> {
@@ -167,7 +162,7 @@ export class FeishuService {
             filter: {
               conjunction: 'and',
               conditions: [{
-                field_name: 'phone',
+                field_name: '手机号',
                 operator: 'is',
                 value: [phone]
               }]
@@ -178,24 +173,13 @@ export class FeishuService {
 
       if (response.data?.items && response.data.items.length > 0) {
         const record = response.data.items[0];
-        // 飞书返回的时间可能是Unix时间戳，转换为ISO字符串
-        const createdTime = record.fields['创建时间'] 
-          ? (typeof record.fields['创建时间'] === 'number' 
-             ? new Date(record.fields['创建时间'] * 1000).toISOString()
-             : record.fields['创建时间'])
-          : new Date().toISOString();
-        const lastLoginTime = record.fields['最后登录时间']
-          ? (typeof record.fields['最后登录时间'] === 'number'
-             ? new Date(record.fields['最后登录时间'] * 1000).toISOString()
-             : record.fields['最后登录时间'])
-          : new Date().toISOString();
-          
         return {
           id: record.record_id,
           phone: record.fields['手机号'],
           name: record.fields['姓名'] || '未设置',
-          createdTime,
-          lastLoginTime
+          userType: record.fields['用户类型'] || '家长',
+          createdTime: record.fields['创建时间'] || new Date().toISOString(),
+          lastLoginTime: record.fields['最后登录时间'] || new Date().toISOString()
         };
       }
 
@@ -209,11 +193,11 @@ export class FeishuService {
   /**
    * 创建新用户
    */
-  async createUser(phone: string, name?: string): Promise<User> {
+  async createUser(phone: string, name?: string, userType: '老师' | '家长' | '管理员' = '家长'): Promise<User> {
     try {
-      console.log('创建新用户:', { phone, name });
+      console.log('创建新用户:', { phone, name, userType });
       
-      const now = Math.floor(Date.now() / 1000); // Unix时间戳（秒）
+      const now = new Date().toISOString();
       const userName = name || `用户${phone.slice(-4)}`;
       
       const response = await this.apiRequest(
@@ -224,37 +208,31 @@ export class FeishuService {
             fields: {
               '手机号': phone,
               '姓名': userName,
+              '用户类型': userType,
               '创建时间': now,
-              '最后登录时间': now
+              '最后登录时间': now,
+              '状态': '正常'
             }
           })
         }
       );
 
-      const record = response.data.record;
-      // 将Unix时间戳转换为ISO字符串
-      const createdTime = typeof record.fields['创建时间'] === 'number'
-        ? new Date(record.fields['创建时间'] * 1000).toISOString()
-        : record.fields['创建时间'];
-      const lastLoginTime = typeof record.fields['最后登录时间'] === 'number'
-        ? new Date(record.fields['最后登录时间'] * 1000).toISOString()
-        : record.fields['最后登录时间'];
-        
       return {
-        id: record.record_id,
-        phone: record.fields['手机号'],
-        name: record.fields['姓名'],
-        createdTime,
-        lastLoginTime
+        id: response.data.record.record_id,
+        phone,
+        name: userName,
+        userType,
+        createdTime: now,
+        lastLoginTime: now
       };
     } catch (error) {
       console.error('创建用户失败:', error);
-      throw new Error('创建用户失败，请稍后重试');
+      throw error;
     }
   }
 
   /**
-   * 更新用户最后登录时间
+   * 更新用户登录时间
    */
   async updateUserLoginTime(userId: string): Promise<void> {
     try {
@@ -264,103 +242,136 @@ export class FeishuService {
           method: 'PUT',
           body: JSON.stringify({
             fields: {
-              '最后登录时间': Math.floor(Date.now() / 1000) // Unix时间戳（秒）
+              '最后登录时间': new Date().toISOString()
             }
           })
         }
       );
     } catch (error) {
-      console.error('更新登录时间失败:', error);
-      // 不抛出错误，因为这不是关键功能
+      console.error('更新用户登录时间失败:', error);
+      // 不抛出错误，因为这不是关键操作
     }
   }
 
   /**
-   * 用户登录/注册统一接口
+   * 用户认证（登录或注册）
    */
-  async authenticateUser(phone: string, name?: string): Promise<{
+  async authenticateUser(phone: string, name?: string, userType?: '老师' | '家长' | '管理员'): Promise<{
     user: User;
     isNewUser: boolean;
   }> {
-    // 检查用户是否存在
-    let user = await this.checkUserExists(phone);
-    let isNewUser = false;
+    try {
+      // 检查用户是否存在
+      let user = await this.checkUserExists(phone);
+      let isNewUser = false;
 
-    if (!user) {
-      // 用户不存在，创建新用户
-      user = await this.createUser(phone, name);
-      isNewUser = true;
-      console.log('创建新用户成功:', user);
-    } else {
-      // 用户存在，更新登录时间
-      await this.updateUserLoginTime(user.id);
-      console.log('用户登录成功:', user);
+      if (user) {
+        // 更新登录时间
+        await this.updateUserLoginTime(user.id);
+        user.lastLoginTime = new Date().toISOString();
+      } else {
+        // 创建新用户
+        user = await this.createUser(phone, name, userType || '家长');
+        isNewUser = true;
+      }
+
+      return { user, isNewUser };
+    } catch (error) {
+      console.error('用户认证失败:', error);
+      throw error;
     }
-
-    return { user, isNewUser };
   }
 
   /**
    * 获取AI新闻列表
    */
-  async getNewsFromTable(tableId: string, pageSize: number = 20): Promise<any[]> {
+  async getNewsList(pageSize: number = 20, pageToken?: string): Promise<{
+    items: NewsItem[];
+    hasMore: boolean;
+    nextPageToken?: string;
+  }> {
     try {
+      console.log('获取新闻列表');
+      
       const response = await this.apiRequest(
-        `/bitable/v1/apps/${FEISHU_CONFIG.USER_TABLE_APP_TOKEN}/tables/${tableId}/records`,
+        `/bitable/v1/apps/${FEISHU_CONFIG.NEWS_APP_TOKEN}/tables/${FEISHU_CONFIG.NEWS_TABLE_ID}/records/search`,
         {
           method: 'POST',
           body: JSON.stringify({
             page_size: pageSize,
+            page_token: pageToken,
             sort: [{
-              field_name: '发布时间',
-              desc: true
+              field_name: '抓取时间',
+              desc: true // 按时间降序排列，最新的在前
             }]
           })
         }
       );
 
+      const newsItems: NewsItem[] = [];
+      
       if (response.data?.items) {
-        return response.data.items.map((item: any) => ({
-          id: item.record_id,
-          title: item.fields['标题'] || '',
-          summary: item.fields['摘要'] || '',
-          source: item.fields['来源'] || '',
-          publishTime: item.fields['发布时间'] || new Date().toISOString(),
-          category: item.fields['分类'] || 'AI技术',
-          url: item.fields['链接'] || '',
-          isHot: item.fields['是否热门'] || false
-        }));
+        for (const record of response.data.items) {
+          const fields = record.fields;
+          newsItems.push({
+            id: record.record_id,
+            title: fields['新闻标题'] || '无标题',
+            source: fields['新闻来源'] || '未知来源',
+            url: fields['新闻链接']?.link || '',
+            heat: fields['热度'] || 0,
+            crawlTime: fields['抓取时间'] ? new Date(fields['抓取时间']).toISOString() : new Date().toISOString(),
+            aiRelevance: fields['AI相关度'] || '未分类',
+            summary: fields['新闻摘要'] || '暂无摘要'
+          });
+        }
       }
 
-      return [];
+      return {
+        items: newsItems,
+        hasMore: response.data?.has_more || false,
+        nextPageToken: response.data?.page_token
+      };
     } catch (error) {
-      console.error('获取新闻数据失败:', error);
-      return [];
+      console.error('获取新闻列表失败:', error);
+      throw error;
     }
   }
 
   /**
-   * 记录用户工具使用情况
+   * 保存新闻到数据库
    */
-  async recordToolUsage(userId: string, toolName: string, toolType: string): Promise<void> {
+  async saveNews(newsItem: Omit<NewsItem, 'id'>): Promise<NewsItem> {
     try {
-      await this.apiRequest(
-        `/bitable/v1/apps/${FEISHU_CONFIG.USER_TABLE_APP_TOKEN}/tables/${FEISHU_CONFIG.TOOL_USAGE_TABLE_ID}/records`,
+      console.log('保存新闻:', newsItem.title);
+      
+      const response = await this.apiRequest(
+        `/bitable/v1/apps/${FEISHU_CONFIG.NEWS_APP_TOKEN}/tables/${FEISHU_CONFIG.NEWS_TABLE_ID}/records`,
         {
           method: 'POST',
           body: JSON.stringify({
             fields: {
-              '用户ID': userId,
-              '工具名称': toolName,
-              '工具类型': toolType,
-              '使用时间': new Date().toISOString()
+              '新闻标题': newsItem.title,
+              '新闻来源': newsItem.source,
+              '新闻链接': {
+                link: newsItem.url,
+                text: '立即查看'
+              },
+              '热度': newsItem.heat,
+              '抓取时间': new Date(newsItem.crawlTime).getTime(),
+              'AI相关度': newsItem.aiRelevance,
+              '新闻摘要': newsItem.summary
             }
           })
         }
       );
+
+      return {
+        id: response.data.record.record_id,
+        ...newsItem
+      };
     } catch (error) {
-      console.error('记录工具使用失败:', error);
-      // 不抛出错误，因为这不是关键功能
+      console.error('保存新闻失败:', error);
+      throw error;
     }
   }
 }
