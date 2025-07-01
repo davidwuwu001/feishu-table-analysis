@@ -61,7 +61,6 @@ export interface User {
   id: string;
   phone: string;
   name: string;
-  userType: '老师' | '家长' | '管理员';
   createdTime: string;
   lastLoginTime: string;
 }
@@ -135,6 +134,25 @@ export class FeishuService {
   }
 
   /**
+   * 获取表格字段信息
+   */
+  async getTableFields(): Promise<any[]> {
+    try {
+      console.log('获取表格字段信息...');
+      
+      const response = await this.apiRequest(
+        `/bitable/v1/apps/${FEISHU_CONFIG.USER_TABLE_APP_TOKEN}/tables/${FEISHU_CONFIG.USER_TABLE_ID}/fields`
+      );
+      
+      console.log('表格字段信息:', response.data?.items);
+      return response.data?.items || [];
+    } catch (error) {
+      console.error('获取表格字段信息失败:', error);
+      throw error;
+    }
+  }
+
+  /**
    * 检查用户是否存在
    */
   async checkUserExists(phone: string): Promise<User | null> {
@@ -149,7 +167,7 @@ export class FeishuService {
             filter: {
               conjunction: 'and',
               conditions: [{
-                field_name: '手机号',
+                field_name: 'phone',
                 operator: 'is',
                 value: [phone]
               }]
@@ -160,13 +178,24 @@ export class FeishuService {
 
       if (response.data?.items && response.data.items.length > 0) {
         const record = response.data.items[0];
+        // 飞书返回的时间可能是Unix时间戳，转换为ISO字符串
+        const createdTime = record.fields['创建时间'] 
+          ? (typeof record.fields['创建时间'] === 'number' 
+             ? new Date(record.fields['创建时间'] * 1000).toISOString()
+             : record.fields['创建时间'])
+          : new Date().toISOString();
+        const lastLoginTime = record.fields['最后登录时间']
+          ? (typeof record.fields['最后登录时间'] === 'number'
+             ? new Date(record.fields['最后登录时间'] * 1000).toISOString()
+             : record.fields['最后登录时间'])
+          : new Date().toISOString();
+          
         return {
           id: record.record_id,
           phone: record.fields['手机号'],
           name: record.fields['姓名'] || '未设置',
-          userType: record.fields['用户类型'] || '家长',
-          createdTime: record.fields['创建时间'] || new Date().toISOString(),
-          lastLoginTime: record.fields['最后登录时间'] || new Date().toISOString()
+          createdTime,
+          lastLoginTime
         };
       }
 
@@ -180,11 +209,11 @@ export class FeishuService {
   /**
    * 创建新用户
    */
-  async createUser(phone: string, name?: string, userType: '老师' | '家长' | '管理员' = '家长'): Promise<User> {
+  async createUser(phone: string, name?: string): Promise<User> {
     try {
-      console.log('创建新用户:', { phone, name, userType });
+      console.log('创建新用户:', { phone, name });
       
-      const now = new Date().toISOString();
+      const now = Math.floor(Date.now() / 1000); // Unix时间戳（秒）
       const userName = name || `用户${phone.slice(-4)}`;
       
       const response = await this.apiRequest(
@@ -195,23 +224,28 @@ export class FeishuService {
             fields: {
               '手机号': phone,
               '姓名': userName,
-              '用户类型': userType,
               '创建时间': now,
-              '最后登录时间': now,
-              '状态': '正常'
+              '最后登录时间': now
             }
           })
         }
       );
 
       const record = response.data.record;
+      // 将Unix时间戳转换为ISO字符串
+      const createdTime = typeof record.fields['创建时间'] === 'number'
+        ? new Date(record.fields['创建时间'] * 1000).toISOString()
+        : record.fields['创建时间'];
+      const lastLoginTime = typeof record.fields['最后登录时间'] === 'number'
+        ? new Date(record.fields['最后登录时间'] * 1000).toISOString()
+        : record.fields['最后登录时间'];
+        
       return {
         id: record.record_id,
         phone: record.fields['手机号'],
         name: record.fields['姓名'],
-        userType: record.fields['用户类型'],
-        createdTime: record.fields['创建时间'],
-        lastLoginTime: record.fields['最后登录时间']
+        createdTime,
+        lastLoginTime
       };
     } catch (error) {
       console.error('创建用户失败:', error);
@@ -230,7 +264,7 @@ export class FeishuService {
           method: 'PUT',
           body: JSON.stringify({
             fields: {
-              '最后登录时间': new Date().toISOString()
+              '最后登录时间': Math.floor(Date.now() / 1000) // Unix时间戳（秒）
             }
           })
         }
@@ -244,7 +278,7 @@ export class FeishuService {
   /**
    * 用户登录/注册统一接口
    */
-  async authenticateUser(phone: string, name?: string, userType?: '老师' | '家长' | '管理员'): Promise<{
+  async authenticateUser(phone: string, name?: string): Promise<{
     user: User;
     isNewUser: boolean;
   }> {
@@ -254,7 +288,7 @@ export class FeishuService {
 
     if (!user) {
       // 用户不存在，创建新用户
-      user = await this.createUser(phone, name, userType);
+      user = await this.createUser(phone, name);
       isNewUser = true;
       console.log('创建新用户成功:', user);
     } else {

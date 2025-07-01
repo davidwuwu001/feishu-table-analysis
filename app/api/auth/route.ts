@@ -4,7 +4,7 @@ import { feishuService } from '@/lib/feishu';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { phone, name, userType } = body;
+    const { phone, name } = body;
 
     // 验证必需字段
     if (!phone) {
@@ -23,20 +23,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 验证用户类型
-    const validUserTypes = ['老师', '家长', '管理员'];
-    if (userType && !validUserTypes.includes(userType)) {
-      return NextResponse.json(
-        { success: false, error: '用户类型不正确' },
-        { status: 400 }
-      );
+    // 首先获取表格字段信息
+    try {
+      const fields = await feishuService.getTableFields();
+      console.log('飞书表格字段信息:', fields);
+    } catch (error) {
+      console.log('获取字段信息失败，但继续尝试认证');
     }
 
     // 进行用户认证（登录或注册）
     const result = await feishuService.authenticateUser(
       phone,
-      name || undefined,
-      userType || '家长'
+      name || undefined
     );
 
     if (result.user) {
