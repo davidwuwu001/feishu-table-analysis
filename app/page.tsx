@@ -69,7 +69,18 @@ export default function LoginPage() {
     setError('');
   };
 
+  // 如果用户已登录，显示成功页面并准备跳转
   if (user) {
+    // 保存用户信息到localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('currentUser', JSON.stringify(user));
+      
+      // 3秒后自动跳转到dashboard
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 3000);
+    }
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-600 to-pink-500 flex items-center justify-center p-4">
         <div className="bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl p-8 w-full max-w-md">
@@ -83,8 +94,11 @@ export default function LoginPage() {
               {isNewUser ? '🎉 注册成功！' : '🔐 登录成功！'}
             </h2>
             <p className="text-gray-600">
-              {isNewUser ? '欢迎加入飞书系统' : '欢迎回来'}
+              {isNewUser ? '欢迎加入AI工具平台' : '欢迎回来'}
             </p>
+            <div className="mt-4 text-sm text-blue-600">
+              3秒后自动跳转到主页...
+            </div>
           </div>
 
           <div className="space-y-4 mb-6">

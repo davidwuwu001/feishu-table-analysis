@@ -14,6 +14,8 @@ const FEISHU_CONFIG = {
   APP_SECRET: process.env.FEISHU_APP_SECRET || '',
   USER_TABLE_APP_TOKEN: process.env.FEISHU_USER_TABLE_APP_TOKEN || '',
   USER_TABLE_ID: process.env.FEISHU_USER_TABLE_ID || '',
+  NEWS_TABLE_ID: process.env.FEISHU_NEWS_TABLE_ID || 'tblNewsDefault',
+  TOOL_USAGE_TABLE_ID: process.env.FEISHU_TOOL_USAGE_TABLE_ID || 'tblToolUsageDefault',
   API_BASE_URL: 'https://open.feishu.cn/open-apis'
 };
 
@@ -262,6 +264,70 @@ export class FeishuService {
     }
 
     return { user, isNewUser };
+  }
+
+  /**
+   * 获取AI新闻列表
+   */
+  async getNewsFromTable(tableId: string, pageSize: number = 20): Promise<any[]> {
+    try {
+      const response = await this.apiRequest(
+        `/bitable/v1/apps/${FEISHU_CONFIG.USER_TABLE_APP_TOKEN}/tables/${tableId}/records`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            page_size: pageSize,
+            sort: [{
+              field_name: '发布时间',
+              desc: true
+            }]
+          })
+        }
+      );
+
+      if (response.data?.items) {
+        return response.data.items.map((item: any) => ({
+          id: item.record_id,
+          title: item.fields['标题'] || '',
+          summary: item.fields['摘要'] || '',
+          source: item.fields['来源'] || '',
+          publishTime: item.fields['发布时间'] || new Date().toISOString(),
+          category: item.fields['分类'] || 'AI技术',
+          url: item.fields['链接'] || '',
+          isHot: item.fields['是否热门'] || false
+        }));
+      }
+
+      return [];
+    } catch (error) {
+      console.error('获取新闻数据失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 记录用户工具使用情况
+   */
+  async recordToolUsage(userId: string, toolName: string, toolType: string): Promise<void> {
+    try {
+      await this.apiRequest(
+        `/bitable/v1/apps/${FEISHU_CONFIG.USER_TABLE_APP_TOKEN}/tables/${FEISHU_CONFIG.TOOL_USAGE_TABLE_ID}/records`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            fields: {
+              '用户ID': userId,
+              '工具名称': toolName,
+              '工具类型': toolType,
+              '使用时间': new Date().toISOString()
+            }
+          })
+        }
+      );
+    } catch (error) {
+      console.error('记录工具使用失败:', error);
+      // 不抛出错误，因为这不是关键功能
+    }
   }
 }
 
