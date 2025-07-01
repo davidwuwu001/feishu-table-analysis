@@ -154,6 +154,12 @@ export class FeishuService {
     try {
       console.log('检查用户是否存在:', phone);
       
+      // 检查必要的配置是否存在
+      if (!FEISHU_CONFIG.USER_TABLE_APP_TOKEN || !FEISHU_CONFIG.USER_TABLE_ID) {
+        console.error('用户表配置缺失');
+        throw new Error('用户表配置缺失，请检查环境变量');
+      }
+      
       const response = await this.apiRequest(
         `/bitable/v1/apps/${FEISHU_CONFIG.USER_TABLE_APP_TOKEN}/tables/${FEISHU_CONFIG.USER_TABLE_ID}/records/search`,
         {
@@ -162,7 +168,7 @@ export class FeishuService {
             filter: {
               conjunction: 'and',
               conditions: [{
-                field_name: '手机号',
+                field_name: 'phone',
                 operator: 'is',
                 value: [phone]
               }]
@@ -175,18 +181,26 @@ export class FeishuService {
         const record = response.data.items[0];
         return {
           id: record.record_id,
-          phone: record.fields['手机号'],
-          name: record.fields['姓名'] || '未设置',
-          userType: record.fields['用户类型'] || '家长',
-          createdTime: record.fields['创建时间'] || new Date().toISOString(),
-          lastLoginTime: record.fields['最后登录时间'] || new Date().toISOString()
+          phone: record.fields['phone'] || record.fields['手机号'],
+          name: record.fields['name'] || record.fields['姓名'] || '未设置',
+          userType: record.fields['user_type'] || record.fields['用户类型'] || '家长',
+          createdTime: record.fields['created_time'] || record.fields['创建时间'] || new Date().toISOString(),
+          lastLoginTime: record.fields['last_login_time'] || record.fields['最后登录时间'] || new Date().toISOString()
         };
       }
 
       return null;
-    } catch (error) {
+    } catch (error: any) {
       console.error('检查用户存在性失败:', error);
-      return null;
+      
+      // 特殊处理字段名不存在的错误
+      if (error.message && error.message.includes('field_name')) {
+        console.error('字段名不存在，可能需要创建用户表或更新字段结构');
+        throw new Error('用户数据表结构不匹配，请联系管理员初始化用户表');
+      }
+      
+      // 其他错误直接抛出
+      throw new Error(`用户认证服务暂时不可用: ${error.message}`);
     }
   }
 
@@ -206,12 +220,12 @@ export class FeishuService {
           method: 'POST',
           body: JSON.stringify({
             fields: {
-              '手机号': phone,
-              '姓名': userName,
-              '用户类型': userType,
-              '创建时间': now,
-              '最后登录时间': now,
-              '状态': '正常'
+              'phone': phone,
+              'name': userName,
+              'user_type': userType,
+              'created_time': now,
+              'last_login_time': now,
+              'status': '正常'
             }
           })
         }
@@ -242,7 +256,7 @@ export class FeishuService {
           method: 'PUT',
           body: JSON.stringify({
             fields: {
-              '最后登录时间': new Date().toISOString()
+              'last_login_time': new Date().toISOString()
             }
           })
         }
